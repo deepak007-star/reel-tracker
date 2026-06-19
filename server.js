@@ -8,6 +8,7 @@ import express from "express";
 import path from "path";
 import { fileURLToPath } from "url";
 import { pool, initDb } from "./db.js";
+import { scrapeAndSave } from "./scraper.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app  = express();
@@ -79,13 +80,19 @@ app.post("/api/reels", async (req, res) => {
   const entryLabel = label?.trim() || shortCode || clean;
 
   try {
-    await pool.query(
+    const { rowCount } = await pool.query(
       `INSERT INTO reels (url, label, short_code) VALUES ($1, $2, $3)
        ON CONFLICT (url) DO NOTHING`,
       [clean, entryLabel, shortCode]
     );
     console.log(`  + Added reel: ${entryLabel}`);
     res.json({ ok: true, entry: { url: clean, label: entryLabel } });
+
+    // Fire an immediate first scrape in the background — don't block the response.
+    if (rowCount > 0) {
+      scrapeAndSave([{ url: clean, label: entryLabel, short_code: shortCode }])
+        .catch(e => console.error(`  Background scrape failed for ${entryLabel}:`, e.message));
+    }
   } catch (e) {
     if (e.code === "23505") return res.status(409).json({ error: "URL already tracked" });
     res.status(500).json({ error: e.message });

@@ -8,6 +8,10 @@ services:
     envVars:
       - key: DATABASE_URL
         sync: false          # paste your Render Postgres internal URL here
+      - key: APIFY_TOKEN
+        sync: false          # needed for immediate scrape on reel add
+      - key: APIFY_IG_ACTOR_ID
+        value: apify~instagram-scraper
       - key: NODE_ENV
         value: production
 
