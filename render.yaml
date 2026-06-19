@@ -3,7 +3,6 @@ services:
   - type: web
     name: reel-tracker-dashboard
     runtime: node
-    rootDir: reel-tracker
     buildCommand: npm install
     startCommand: node server.js
     envVars:
@@ -17,7 +16,6 @@ services:
     name: reel-tracker-cron
     runtime: node
     schedule: "*/30 * * * *"
-    rootDir: reel-tracker
     buildCommand: npm install
     startCommand: node tracker.js --once
     envVars:
