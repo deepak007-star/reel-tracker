@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reel Growth Tracker</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #0c0c14;
+      --surface:  #13131f;
+      --card:     #1a1a2e;
+      --border:   #2a2a42;
+      --text:     #e2e8f0;
+      --muted:    #64748b;
+      --accent:   #6366f1;
+      --positive: #10b981;
+      --warning:  #f59e0b;
+      --negative: #ef4444;
+      --pink:     #ec4899;
+      --blue:     #3b82f6;
+    }
+
+    body { background: var(--bg); color: var(--text); font-family: system-ui, sans-serif; font-size: 14px; }
+
+    header {
+      background: var(--surface); border-bottom: 1px solid var(--border);
+      padding: 14px 24px; display: flex; align-items: center; justify-content: space-between;
+      position: sticky; top: 0; z-index: 10;
+    }
+    header h1 { font-size: 15px; font-weight: 600; }
+    header h1 span { color: var(--accent); }
+    #lastUpdated { font-size: 11px; color: var(--muted); font-family: monospace; }
+
+    main { max-width: 1400px; margin: 0 auto; padding: 24px; }
+
+    /* ── Add-reel panel ── */
+    .add-panel {
+      background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+      padding: 16px 20px; margin-bottom: 20px;
+    }
+    .add-panel h3 { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; margin-bottom: 12px; }
+    .add-row { display: flex; gap: 8px; flex-wrap: wrap; }
+    .add-row input {
+      background: var(--surface); color: var(--text); border: 1px solid var(--border);
+      border-radius: 8px; padding: 8px 12px; font-size: 13px; flex: 1; min-width: 200px;
+      outline: none;
+    }
+    .add-row input:focus { border-color: var(--accent); }
+    .add-row input::placeholder { color: var(--muted); }
+    .add-status { font-size: 12px; margin-top: 8px; min-height: 18px; font-family: monospace; }
+    .add-status.ok  { color: var(--positive); }
+    .add-status.err { color: var(--negative); }
+
+    /* ── Reel list pills ── */
+    .reel-pills { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+    .reel-pill {
+      display: flex; align-items: center; gap: 6px;
+      background: var(--surface); border: 1px solid var(--border); border-radius: 20px;
+      padding: 4px 10px 4px 12px; font-size: 12px; color: var(--text);
+    }
+    .reel-pill .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .reel-pill button {
+      background: none; border: none; color: var(--muted); cursor: pointer; font-size: 14px;
+      line-height: 1; padding: 0; border-radius: 50%; width: 16px; height: 16px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .reel-pill button:hover { color: var(--negative); background: rgba(239,68,68,.15); }
+
+    /* ── Controls ── */
+    .controls { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }
+    select {
+      background: var(--card); color: var(--text); border: 1px solid var(--border);
+      border-radius: 8px; padding: 8px 12px; font-size: 13px; cursor: pointer; min-width: 220px;
+    }
+    button {
+      background: var(--accent); color: #fff; border: none; border-radius: 8px;
+      padding: 8px 16px; font-size: 13px; font-weight: 600; cursor: pointer; transition: opacity .15s;
+    }
+    button:hover { opacity: .85; }
+    button:disabled { opacity: .4; cursor: default; }
+    button.secondary { background: var(--card); color: var(--text); border: 1px solid var(--border); }
+
+    /* ── Stats ── */
+    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 24px; }
+    .stat { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+    .stat-value { font-size: 20px; font-weight: 700; font-family: monospace; color: var(--text); }
+    .stat-value.accent { color: var(--accent); }
+    .stat-value.pos    { color: var(--positive); }
+    .stat-value.warn   { color: var(--warning); }
+    .stat-value.neg    { color: var(--negative); }
+    .stat-label { font-size: 11px; color: var(--muted); margin-top: 4px; text-transform: uppercase; letter-spacing: .05em; }
+
+    /* ── Charts ── */
+    .charts { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+    @media (max-width: 900px) { .charts { grid-template-columns: 1fr; } }
+    .chart-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 20px; }
+    .chart-card h3 { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; margin-bottom: 16px; }
+    .chart-card canvas { max-height: 260px; }
+
+    /* ── Signal flags ── */
+    .flag-line {
+      font-size: 11px; font-family: monospace; padding: 2px 8px; border-radius: 4px;
+      display: inline-flex; align-items: center; gap: 4px; margin-bottom: 8px; margin-right: 6px;
+    }
+    .flag-line.warn { background: rgba(245,158,11,.12); color: var(--warning); border: 1px solid rgba(245,158,11,.3); }
+    .flag-line.ok   { background: rgba(16,185,129,.12);  color: var(--positive); border: 1px solid rgba(16,185,129,.3); }
+    .flag-line.bad  { background: rgba(239,68,68,.12);   color: var(--negative); border: 1px solid rgba(239,68,68,.3); }
+
+    /* ── Raw table ── */
+    details { background: var(--card); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+    summary { padding: 14px 20px; cursor: pointer; font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; user-select: none; }
+    summary:hover { color: var(--text); }
+    table { width: 100%; border-collapse: collapse; font-family: monospace; font-size: 12px; }
+    th { background: var(--surface); color: var(--muted); text-align: left; padding: 10px 14px; font-weight: 500; border-bottom: 1px solid var(--border); }
+    td { padding: 8px 14px; border-bottom: 1px solid var(--border); color: var(--text); }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: rgba(99,102,241,.05); }
+
+    #noData { text-align: center; padding: 60px 24px; color: var(--muted); }
+    #noData h2 { font-size: 18px; margin-bottom: 8px; }
+    #noData code { background: var(--card); padding: 2px 6px; border-radius: 4px; font-size: 13px; }
+
+    .badge {
+      display: inline-block; font-size: 10px; font-weight: 700;
+      padding: 2px 6px; border-radius: 4px; font-family: monospace; text-transform: uppercase;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Reel Growth <span>Tracker</span></h1>
+  <div style="display:flex; align-items:center; gap:12px;">
+    <span id="lastUpdated">—</span>
+    <button onclick="loadAndRender()">↻ Refresh</button>
+  </div>
+</header>
+
+<main>
+
+  <!-- Add Reel Panel -->
+  <div class="add-panel">
+    <h3>Track a New Reel</h3>
+    <div class="add-row">
+      <input id="urlInput"   type="text" placeholder="https://www.instagram.com/reel/ABC123/" />
+      <input id="labelInput" type="text" placeholder="Label (e.g. Viral Reel — Creator A)" style="max-width:280px;" />
+      <button id="addBtn" onclick="addReel()">+ Add</button>
+    </div>
+    <div id="addStatus" class="add-status"></div>
+    <div id="reelPills" class="reel-pills"></div>
+  </div>
+
+  <div id="noData" style="display:none;">
+    <h2>No data yet</h2>
+    <p>Paste a reel URL above, then start the tracker:</p>
+    <br>
+    <code>cd reel-tracker &amp;&amp; npm run track</code>
+  </div>
+
+  <div id="app" style="display:none;">
+    <div class="controls">
+      <select id="reelSelect" onchange="onReelChange()">
+        <option value="__all__">📊 All Reels — Comparison</option>
+      </select>
+      <span id="snapshotBadge" class="badge" style="background:rgba(99,102,241,.15);color:var(--accent);border:1px solid rgba(99,102,241,.3);">0 snapshots</span>
+    </div>
+
+    <div id="signals" style="margin-bottom:16px;"></div>
+    <div class="stats" id="statsRow"></div>
+
+    <div class="charts">
+      <div class="chart-card">
+        <h3 id="c1title">Views Over Time</h3>
+        <canvas id="chart1"></canvas>
+      </div>
+      <div class="chart-card">
+        <h3 id="c2title">Growth Velocity (views/hr)</h3>
+        <canvas id="chart2"></canvas>
+      </div>
+      <div class="chart-card">
+        <h3 id="c3title">Engagement Ratio (%)</h3>
+        <canvas id="chart3"></canvas>
+      </div>
+      <div class="chart-card">
+        <h3 id="c4title">Plays vs Unique Views Ratio</h3>
+        <canvas id="chart4"></canvas>
+      </div>
+      <div class="chart-card" style="grid-column:1/-1;">
+        <h3 id="c5title">Likes · Comments · Saves</h3>
+        <canvas id="chart5"></canvas>
+      </div>
+    </div>
+
+    <details>
+      <summary>Raw Snapshot Data</summary>
+      <div style="overflow-x:auto;">
+        <table>
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Plays</th>
+              <th>Unique Views</th>
+              <th>Play/View Ratio</th>
+              <th>Δ Plays</th>
+              <th>Likes</th>
+              <th>Comments</th>
+              <th>Saves</th>
+              <th>Eng %</th>
+            </tr>
+          </thead>
+          <tbody id="rawTable"></tbody>
+        </table>
+      </div>
+    </details>
+  </div>
+</main>
+
+<script>
+// ── State ─────────────────────────────────────────────────────────────────────
+let allData = {};
+let charts  = {};
+
+// Chart.js dark defaults
+Chart.defaults.color        = '#64748b';
+Chart.defaults.borderColor  = '#2a2a42';
+Chart.defaults.font.family  = 'monospace';
+Chart.defaults.font.size    = 11;
+Chart.defaults.plugins.legend.labels.boxWidth = 12;
+Chart.defaults.plugins.legend.labels.padding  = 16;
+
+const COLORS = ['#6366f1','#ec4899','#10b981','#f59e0b','#3b82f6','#a78bfa','#f87171','#34d399'];
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+const fmt    = n => n == null ? '—' : Number(n).toLocaleString('en-IN');
+const fmtK   = n => n >= 1e6 ? (n/1e6).toFixed(1)+'M' : n >= 1e3 ? (n/1e3).toFixed(1)+'K' : String(n);
+const fmtT   = iso => { const d = new Date(iso); return d.toLocaleDateString('en-IN',{month:'short',day:'numeric'})+' '+d.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',hour12:false}); };
+const hrsDiff = (a, b) => (new Date(b) - new Date(a)) / 3600000;
+
+function engRate(s) {
+  if (!s.videoPlayCount) return 0;
+  return (s.likeCount + s.commentsCount + s.saves) / s.videoPlayCount * 100;
+}
+function playViewRatio(s) {
+  if (!s.videoViewCount) return null;
+  return (s.videoPlayCount / s.videoViewCount).toFixed(2);
+}
+function computeVelocity(snaps) {
+  return snaps.slice(1).map((s, i) => {
+    const prev = snaps[i];
+    const hrs  = hrsDiff(prev.capturedAt, s.capturedAt);
+    return hrs <= 0 ? 0 : Math.round((s.videoPlayCount - prev.videoPlayCount) / hrs);
+  });
+}
+
+// ── Chart management ──────────────────────────────────────────────────────────
+function destroyChart(id) { if (charts[id]) { charts[id].destroy(); delete charts[id]; } }
+function destroyAll()     { ['chart1','chart2','chart3','chart4','chart5'].forEach(destroyChart); }
+
+function mkChart(id, type, data, extra = {}) {
+  destroyChart(id);
+  charts[id] = new Chart(document.getElementById(id).getContext('2d'), {
+    type,
+    data,
+    options: {
+      responsive: true, maintainAspectRatio: true, animation: { duration: 200 },
+      plugins: { legend: { display: data.datasets.length > 1 }, tooltip: { mode: 'index', intersect: false } },
+      scales: { x: { grid: { color: '#2a2a4220' }, ticks: { maxRotation: 30, maxTicksLimit: 8 } }, y: { grid: { color: '#2a2a4220' }, beginAtZero: false } },
+      ...extra,
+    },
+  });
+}
+
+// ── Single reel ───────────────────────────────────────────────────────────────
+function renderSingle(reel) {
+  const s = reel.snapshots ?? [];
+  if (!s.length) return;
+
+  const labels   = s.map(x => fmtT(x.capturedAt));
+  const plays    = s.map(x => x.videoPlayCount);
+  const uViews   = s.map(x => x.videoViewCount || null);
+  const likes    = s.map(x => x.likeCount);
+  const comments = s.map(x => x.commentsCount);
+  const saves    = s.map(x => x.saves);
+  const engRates = s.map(x => engRate(x).toFixed(3));
+  const pvRatio  = s.map(x => playViewRatio(x));
+  const vel      = computeVelocity(s);
+  const velLbls  = s.slice(1).map(x => fmtT(x.capturedAt));
+
+  document.getElementById('c1title').textContent = 'Views Over Time';
+  document.getElementById('c2title').textContent = 'Growth Velocity (plays/hr)';
+  document.getElementById('c3title').textContent = 'Engagement Ratio (%)';
+  document.getElementById('c4title').textContent = 'Plays vs Unique Views Ratio';
+  document.getElementById('c5title').textContent = 'Likes · Comments · Saves';
+
+  // 1 — Plays + unique views
+  const ds1 = [{ label:'Plays', data: plays, borderColor: COLORS[0], backgroundColor: COLORS[0]+'22', fill: true, tension: 0.35, pointRadius: s.length > 30 ? 2 : 4 }];
+  if (uViews.some(v => v != null)) {
+    ds1.push({ label:'Unique Views', data: uViews, borderColor: COLORS[4], backgroundColor: 'transparent', tension: 0.35, pointRadius: s.length > 30 ? 2 : 4, spanGaps: true });
+  }
+  mkChart('chart1', 'line', { labels, datasets: ds1 });
+
+  // 2 — Velocity bars
+  const avgVel = vel.reduce((a,b)=>a+b,0) / (vel.length||1);
+  mkChart('chart2', 'bar', {
+    labels: velLbls,
+    datasets: [{ label:'plays/hr', data: vel,
+      backgroundColor: vel.map(v => v > avgVel*5 ? '#ef444490' : v > avgVel*2 ? '#f59e0b90' : '#6366f190'),
+      borderColor: 'transparent' }],
+  }, { plugins: { legend: { display: false } } });
+
+  // 3 — Engagement ratio with reference lines
+  mkChart('chart3', 'line', {
+    labels,
+    datasets: [
+      { label:'Eng %', data: engRates, borderColor: COLORS[2], backgroundColor: COLORS[2]+'22', fill: true, tension: 0.35, pointRadius: s.length > 30 ? 2 : 4 },
+      { label:'1.5% benchmark', data: Array(s.length).fill(1.5), borderColor:'#64748b50', borderDash:[5,5], pointRadius:0, fill:false },
+      { label:'0.5% flag',      data: Array(s.length).fill(0.5), borderColor:'#ef444450', borderDash:[3,3], pointRadius:0, fill:false },
+    ],
+  });
+
+  // 4 — Play/View ratio (fake signal: >2 = replays dominating, suspicious if high)
+  const hasRatio = pvRatio.some(v => v != null);
+  if (hasRatio) {
+    mkChart('chart4', 'line', {
+      labels,
+      datasets: [
+        { label:'Plays/Unique Views', data: pvRatio, borderColor: COLORS[3], backgroundColor: COLORS[3]+'22', fill: true, tension: 0.35, pointRadius: s.length > 30 ? 2 : 4, spanGaps: true },
+        { label:'1.0 baseline', data: Array(s.length).fill(1.0), borderColor:'#64748b50', borderDash:[5,5], pointRadius:0, fill:false },
+        { label:'2.0 flag',     data: Array(s.length).fill(2.0), borderColor:'#ef444450', borderDash:[3,3], pointRadius:0, fill:false },
+      ],
+    });
+  } else {
+    destroyChart('chart4');
+    document.getElementById('chart4').insertAdjacentHTML('afterend', '<p style="color:var(--muted);font-size:12px;text-align:center;padding:40px 0;">Apify did not return videoViewCount for this reel.</p>');
+  }
+
+  // 5 — Breakdown
+  mkChart('chart5', 'line', {
+    labels,
+    datasets: [
+      { label:'Likes',    data: likes,    borderColor: COLORS[1], backgroundColor:'transparent', tension: 0.35, pointRadius: 2 },
+      { label:'Comments', data: comments, borderColor: COLORS[3], backgroundColor:'transparent', tension: 0.35, pointRadius: 2 },
+      { label:'Saves',    data: saves,    borderColor: COLORS[2], backgroundColor:'transparent', tension: 0.35, pointRadius: 2 },
+    ],
+  });
+
+  renderStats(reel);
+  renderSignals(reel);
+  renderTable(s);
+}
+
+// ── Comparison ────────────────────────────────────────────────────────────────
+function renderComparison() {
+  const entries = Object.values(allData).filter(r => r.snapshots?.length);
+  if (!entries.length) return;
+
+  document.getElementById('c1title').textContent = 'Plays Over Time — All Reels';
+  document.getElementById('c2title').textContent = 'Velocity Comparison (plays/hr)';
+  document.getElementById('c3title').textContent = 'Engagement Ratio Comparison (%)';
+  document.getElementById('c4title').textContent = 'Plays/Unique-Views Ratio Comparison';
+  document.getElementById('c5title').textContent = 'Normalized Plays (% of max)';
+
+  const allTs = [...new Set(entries.flatMap(r => r.snapshots.map(s => s.capturedAt)))].sort();
+  const labels = allTs.map(fmtT);
+
+  const atTime = (reel, ts, key) => { const s = reel.snapshots.find(x => x.capturedAt === ts); return s ? (s[key] ?? null) : null; };
+
+  mkChart('chart1', 'line', { labels, datasets: entries.map((r,i) => ({
+    label: r.label, data: allTs.map(ts => atTime(r, ts, 'videoPlayCount')),
+    borderColor: COLORS[i%COLORS.length], backgroundColor:'transparent', tension:.35, spanGaps:true, pointRadius:3 })) });
+
+  mkChart('chart2', 'line', { labels: allTs.slice(1).map(fmtT), datasets: entries.map((r,i) => {
+    const vel = computeVelocity(r.snapshots);
+    return { label: r.label, data: allTs.slice(1).map(ts => { const idx = r.snapshots.findIndex(s => s.capturedAt === ts); return idx > 0 ? vel[idx-1] : null; }),
+      borderColor: COLORS[i%COLORS.length], backgroundColor:'transparent', tension:.3, spanGaps:true, pointRadius:3 }; }) });
+
+  mkChart('chart3', 'line', { labels, datasets: entries.map((r,i) => ({
+    label: r.label, data: allTs.map(ts => { const s = r.snapshots.find(x => x.capturedAt === ts); return s ? engRate(s).toFixed(3) : null; }),
+    borderColor: COLORS[i%COLORS.length], backgroundColor:'transparent', tension:.35, spanGaps:true, pointRadius:3 })) });
+
+  mkChart('chart4', 'line', { labels, datasets: entries.map((r,i) => ({
+    label: r.label, data: allTs.map(ts => { const s = r.snapshots.find(x => x.capturedAt === ts); return s ? playViewRatio(s) : null; }),
+    borderColor: COLORS[i%COLORS.length], backgroundColor:'transparent', tension:.35, spanGaps:true, pointRadius:3 })) });
+
+  mkChart('chart5', 'line', { labels, datasets: entries.map((r,i) => {
+    const mx = Math.max(...r.snapshots.map(s => s.videoPlayCount), 1);
+    return { label: r.label, data: allTs.map(ts => { const s = r.snapshots.find(x => x.capturedAt === ts); return s ? (s.videoPlayCount/mx*100).toFixed(1) : null; }),
+      borderColor: COLORS[i%COLORS.length], backgroundColor:'transparent', tension:.35, spanGaps:true, pointRadius:3 }; }) });
+
+  const total = entries.reduce((a,r) => a + r.snapshots.length, 0);
+  document.getElementById('statsRow').innerHTML = entries.map((r,i) => {
+    const last = r.snapshots[r.snapshots.length-1];
+    return `<div class="stat"><div class="stat-value" style="color:${COLORS[i%COLORS.length]}">${fmtK(last.videoPlayCount)}</div><div class="stat-label">${r.label}</div><div style="font-size:11px;color:var(--muted);margin-top:4px;">${engRate(last).toFixed(1)}% eng · ${r.snapshots.length} snaps</div></div>`;
+  }).join('') + `<div class="stat"><div class="stat-value accent">${total}</div><div class="stat-label">Total Snapshots</div></div>`;
+
+  document.getElementById('signals').innerHTML = '';
+  document.getElementById('rawTable').innerHTML = '<tr><td colspan="9" style="color:var(--muted);padding:16px;">Select a single reel for raw data.</td></tr>';
+}
+
+// ── Stats cards ───────────────────────────────────────────────────────────────
+function renderStats(reel) {
+  const s     = reel.snapshots;
+  const first = s[0], last = s[s.length-1];
+  const growth = last.videoPlayCount - first.videoPlayCount;
+  const hrs    = s.length > 1 ? hrsDiff(first.capturedAt, last.capturedAt).toFixed(1) : '—';
+  const er     = engRate(last).toFixed(2);
+  const avgVel = s.length > 1 ? Math.round(growth / hrsDiff(first.capturedAt, last.capturedAt)) : '—';
+  const pvr    = playViewRatio(last);
+
+  document.getElementById('statsRow').innerHTML = `
+    <div class="stat"><div class="stat-value accent">${fmtK(last.videoPlayCount)}</div><div class="stat-label">Current Plays</div></div>
+    ${last.videoViewCount ? `<div class="stat"><div class="stat-value blue">${fmtK(last.videoViewCount)}</div><div class="stat-label">Unique Views</div></div>` : ''}
+    ${pvr ? `<div class="stat"><div class="stat-value ${parseFloat(pvr) > 2 ? 'neg' : parseFloat(pvr) > 1.5 ? 'warn' : 'pos'}">${pvr}×</div><div class="stat-label">Play/View Ratio</div></div>` : ''}
+    <div class="stat"><div class="stat-value pos">+${fmtK(growth)}</div><div class="stat-label">Total Growth</div></div>
+    <div class="stat"><div class="stat-value ${parseFloat(er)<0.5?'neg':parseFloat(er)<1.5?'warn':'pos'}">${er}%</div><div class="stat-label">Engagement Rate</div></div>
+    <div class="stat"><div class="stat-value">${avgVel}</div><div class="stat-label">Avg Plays/hr</div></div>
+    <div class="stat"><div class="stat-value">${s.length}</div><div class="stat-label">Snapshots (${hrs}h)</div></div>
+  `;
+}
+
+// ── Signal flags ──────────────────────────────────────────────────────────────
+function renderSignals(reel) {
+  const s    = reel.snapshots;
+  const last = s[s.length - 1];
+  const er   = engRate(last);
+  const vel  = computeVelocity(s);
+  const avg  = vel.reduce((a,b)=>a+b,0) / (vel.length||1);
+  const pvr  = parseFloat(playViewRatio(last) ?? 0);
+  const flags = [];
+
+  if (er < 0.5 && last.videoPlayCount > 5000)
+    flags.push({ cls:'bad',  text:`⚠ Engagement ${er.toFixed(2)}% below 0.5% — fake view flag` });
+  else if (er < 1.5)
+    flags.push({ cls:'warn', text:`△ Engagement ${er.toFixed(2)}% below 1.5% benchmark` });
+  else
+    flags.push({ cls:'ok',   text:`✓ Engagement ${er.toFixed(2)}% normal` });
+
+  if (pvr > 2)
+    flags.push({ cls:'bad',  text:`⚠ Play/View ratio ${pvr}× — high replay loops or bot plays` });
+  else if (pvr > 1.5)
+    flags.push({ cls:'warn', text:`△ Play/View ratio ${pvr}× — slightly elevated` });
+  else if (pvr > 0)
+    flags.push({ cls:'ok',   text:`✓ Play/View ratio ${pvr}× normal` });
+
+  if (vel.length && Math.max(...vel) > avg * 5)
+    flags.push({ cls:'bad', text:`⚠ Velocity spike: ${fmtK(Math.max(...vel))} plays/hr peak vs ${fmtK(Math.round(avg))} avg` });
+
+  if (last.saves === 0 && last.videoPlayCount > 50000)
+    flags.push({ cls:'warn', text:`△ Zero saves at ${fmtK(last.videoPlayCount)} plays — suspicious` });
+
+  if (last.commentsCount > 0 && last.likeCount > 500 && last.commentsCount / last.likeCount < 0.005)
+    flags.push({ cls:'warn', text:`△ Comment/like ratio ${(last.commentsCount/last.likeCount*100).toFixed(2)}% — possible bot likes` });
+
+  if (s.length < 3)
+    flags.push({ cls:'warn', text:`△ Only ${s.length} snapshot(s) — need more data` });
+
+  document.getElementById('signals').innerHTML = flags.map(f => `<span class="flag-line ${f.cls}">${f.text}</span>`).join('');
+}
+
+// ── Raw table ─────────────────────────────────────────────────────────────────
+function renderTable(snaps) {
+  document.getElementById('rawTable').innerHTML = [...snaps].reverse().map((s, i, arr) => {
+    const prev  = arr[i + 1];
+    const delta = prev != null ? s.videoPlayCount - prev.videoPlayCount : null;
+    const er    = engRate(s).toFixed(3);
+    const pvr   = playViewRatio(s);
+    const erClr = parseFloat(er) < 0.5 ? 'var(--negative)' : parseFloat(er) < 1.5 ? 'var(--warning)' : 'var(--positive)';
+    const pvrClr = pvr ? (parseFloat(pvr) > 2 ? 'var(--negative)' : parseFloat(pvr) > 1.5 ? 'var(--warning)' : 'var(--positive)') : 'var(--muted)';
+    return `<tr>
+      <td>${fmtT(s.capturedAt)}</td>
+      <td>${fmt(s.videoPlayCount)}</td>
+      <td style="color:var(--blue)">${s.videoViewCount ? fmt(s.videoViewCount) : '—'}</td>
+      <td style="color:${pvrClr}">${pvr ?? '—'}</td>
+      <td style="color:${delta != null && delta > 0 ? 'var(--positive)' : 'var(--muted)'}">${delta != null ? '+'+fmt(delta) : '—'}</td>
+      <td>${fmt(s.likeCount)}</td>
+      <td>${fmt(s.commentsCount)}</td>
+      <td>${fmt(s.saves)}</td>
+      <td style="color:${erClr}">${er}%</td>
+    </tr>`;
+  }).join('');
+}
+
+// ── Reel pills (sidebar of tracked reels) ─────────────────────────────────────
+async function refreshPills() {
+  const res   = await fetch('/api/reels').catch(() => ({ json: () => [] }));
+  const reels = await res.json();
+  const pills = document.getElementById('reelPills');
+  pills.innerHTML = reels.map((r, i) => `
+    <div class="reel-pill">
+      <span class="dot" style="background:${COLORS[i % COLORS.length]}"></span>
+      <span>${r.label ?? r.url}</span>
+      <button title="Remove" onclick="removeReel(${JSON.stringify(r.url)})">×</button>
+    </div>`).join('');
+}
+
+// ── Add reel ──────────────────────────────────────────────────────────────────
+async function addReel() {
+  const urlEl   = document.getElementById('urlInput');
+  const labelEl = document.getElementById('labelInput');
+  const status  = document.getElementById('addStatus');
+  const btn     = document.getElementById('addBtn');
+
+  const url   = urlEl.value.trim();
+  const label = labelEl.value.trim();
+  if (!url) { status.textContent = 'Paste a URL first.'; status.className = 'add-status err'; return; }
+
+  btn.disabled = true;
+  status.textContent = 'Adding…';
+  status.className   = 'add-status';
+
+  try {
+    const res  = await fetch('/api/reels', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ url, label }) });
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error ?? 'Failed');
+    status.textContent = `✓ Added "${json.entry.label}" — tracker will pick it up on next run.`;
+    status.className   = 'add-status ok';
+    urlEl.value = ''; labelEl.value = '';
+    refreshPills();
+  } catch(e) {
+    status.textContent = '✗ ' + e.message;
+    status.className   = 'add-status err';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// Allow Enter key in URL field
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('urlInput').addEventListener('keydown', e => { if (e.key === 'Enter') addReel(); });
+});
+
+// ── Remove reel ───────────────────────────────────────────────────────────────
+async function removeReel(url) {
+  if (!confirm(`Remove "${url}" from tracking list?`)) return;
+  await fetch('/api/reels', { method:'DELETE', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ url }) });
+  refreshPills();
+  loadAndRender();
+}
+
+// ── Selector ──────────────────────────────────────────────────────────────────
+function populateSelector(data) {
+  const sel = document.getElementById('reelSelect');
+  const cur = sel.value;
+  while (sel.options.length > 1) sel.remove(1);
+  Object.values(data).forEach(r => {
+    const o = document.createElement('option');
+    o.value       = r.url;
+    o.textContent = `${r.label}  (${r.snapshots?.length ?? 0} snaps)`;
+    sel.appendChild(o);
+  });
+  if ([...sel.options].some(o => o.value === cur)) sel.value = cur;
+}
+
+function onReelChange() {
+  const val = document.getElementById('reelSelect').value;
+  destroyAll();
+  val === '__all__' ? renderComparison() : renderSingle(allData[val]);
+}
+
+// ── Load & render ─────────────────────────────────────────────────────────────
+async function loadAndRender() {
+  try {
+    const res  = await fetch('/api/data');
+    const data = await res.json();
+
+    const snaps = Object.values(data).reduce((a,r) => a + (r.snapshots?.length ?? 0), 0);
+
+    if (!Object.keys(data).length || !snaps) {
+      document.getElementById('noData').style.display = 'block';
+      document.getElementById('app').style.display    = 'none';
+    } else {
+      document.getElementById('noData').style.display = 'none';
+      document.getElementById('app').style.display    = 'block';
+    }
+
+    allData = data;
+    document.getElementById('lastUpdated').textContent  = 'Updated ' + new Date().toLocaleTimeString();
+    document.getElementById('snapshotBadge').textContent = `${snaps} snapshots`;
+
+    populateSelector(data);
+
+    const sel = document.getElementById('reelSelect');
+    destroyAll();
+    sel.value === '__all__' ? renderComparison() : (data[sel.value] ? renderSingle(data[sel.value]) : renderComparison());
+  } catch(e) {
+    console.error('Load failed:', e);
+  }
+}
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+refreshPills();
+loadAndRender();
+setInterval(loadAndRender, 5 * 60 * 1000);
+</script>
+</body>
+</html>

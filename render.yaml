@@ -1,0 +1,31 @@
+services:
+  # Dashboard — serves the chart UI and the add/remove reel API
+  - type: web
+    name: reel-tracker-dashboard
+    runtime: node
+    rootDir: reel-tracker
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: DATABASE_URL
+        sync: false          # paste your Render Postgres internal URL here
+      - key: NODE_ENV
+        value: production
+
+  # Cron job — runs tracker every 30 min, saves snapshot to Postgres
+  - type: cron
+    name: reel-tracker-cron
+    runtime: node
+    schedule: "*/30 * * * *"
+    rootDir: reel-tracker
+    buildCommand: npm install
+    startCommand: node tracker.js --once
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: APIFY_TOKEN
+        sync: false          # paste your Apify token here
+      - key: APIFY_IG_ACTOR_ID
+        value: apify~instagram-scraper
+      - key: NODE_ENV
+        value: production

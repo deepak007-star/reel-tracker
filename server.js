@@ -1,0 +1,125 @@
+/**
+ * server.js — dashboard at http://localhost:3333 (or Render's PORT)
+ * Run: node server.js
+ */
+
+import "dotenv/config";
+import express from "express";
+import path from "path";
+import { fileURLToPath } from "url";
+import { pool, initDb } from "./db.js";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const app  = express();
+const PORT = parseInt(process.env.PORT ?? process.env.DASHBOARD_PORT ?? "3333");
+
+app.use(express.json());
+app.use(express.static(path.join(__dirname, "public")));
+
+// ── Read APIs ──────────────────────────────────────────────────────────────────
+
+// Returns data in same shape as old JSON file so the frontend needs no change:
+// { [url]: { label, url, shortCode, displayUrl, postedAt, snapshots: [...] } }
+app.get("/api/data", async (_req, res) => {
+  try {
+    const { rows: reels } = await pool.query("SELECT * FROM reels ORDER BY created_at");
+    const { rows: snaps } = await pool.query("SELECT * FROM snapshots ORDER BY reel_url, captured_at ASC");
+
+    const data = {};
+    for (const r of reels) {
+      data[r.url] = {
+        label:      r.label,
+        url:        r.url,
+        shortCode:  r.short_code,
+        displayUrl: r.display_url,
+        postedAt:   r.posted_at,
+        snapshots:  snaps
+          .filter(s => s.reel_url === r.url)
+          .map(s => ({
+            capturedAt:     s.captured_at,
+            videoPlayCount: s.video_play_count,
+            videoViewCount: s.video_view_count,
+            likeCount:      s.like_count,
+            commentsCount:  s.comments_count,
+            saves:          s.saves,
+            shares:         s.shares,
+          })),
+      };
+    }
+    res.json(data);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get("/api/reels", async (_req, res) => {
+  try {
+    const { rows } = await pool.query("SELECT url, label FROM reels ORDER BY created_at");
+    res.json(rows);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── Add a reel ─────────────────────────────────────────────────────────────────
+
+app.post("/api/reels", async (req, res) => {
+  const { url, label } = req.body ?? {};
+
+  if (!url || typeof url !== "string") {
+    return res.status(400).json({ error: "url is required" });
+  }
+  if (!/instagram\.com\/(reel|p)\/[A-Za-z0-9_-]+/.test(url)) {
+    return res.status(400).json({ error: "Not a valid Instagram reel/post URL" });
+  }
+
+  const clean      = url.split("?")[0].replace(/\/?$/, "/");
+  const shortCode  = clean.match(/\/(reel|p)\/([A-Za-z0-9_-]+)/)?.[2] ?? null;
+  const entryLabel = label?.trim() || shortCode || clean;
+
+  try {
+    await pool.query(
+      `INSERT INTO reels (url, label, short_code) VALUES ($1, $2, $3)
+       ON CONFLICT (url) DO NOTHING`,
+      [clean, entryLabel, shortCode]
+    );
+    console.log(`  + Added reel: ${entryLabel}`);
+    res.json({ ok: true, entry: { url: clean, label: entryLabel } });
+  } catch (e) {
+    if (e.code === "23505") return res.status(409).json({ error: "URL already tracked" });
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── Remove a reel ──────────────────────────────────────────────────────────────
+
+app.delete("/api/reels", async (req, res) => {
+  const { url } = req.body ?? {};
+  if (!url) return res.status(400).json({ error: "url is required" });
+
+  try {
+    const { rowCount } = await pool.query("DELETE FROM reels WHERE url = $1", [url]);
+    if (!rowCount) return res.status(404).json({ error: "URL not found" });
+    console.log(`  - Removed reel: ${url}`);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── Start ──────────────────────────────────────────────────────────────────────
+
+async function main() {
+  if (!process.env.DATABASE_URL) {
+    console.error("DATABASE_URL not set. Copy .env.example → .env and add it.");
+    process.exit(1);
+  }
+
+  await initDb();
+  app.listen(PORT, () => {
+    console.log(`\nDashboard → http://localhost:${PORT}`);
+  });
+}
+
+main();
