@@ -41,7 +41,10 @@
       background: var(--card); border: 1px solid var(--border); border-radius: 10px;
       padding: 16px 20px; margin-bottom: 20px;
     }
-    .add-panel h3 { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; margin-bottom: 12px; }
+    .add-panel-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+    .add-panel h3 { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; margin: 0; }
+    .btn-danger { background: transparent !important; border: 1px solid var(--negative) !important; color: var(--negative) !important; font-size: 11px; padding: 4px 10px !important; }
+    .btn-danger:hover { background: rgba(239,68,68,.12) !important; opacity: 1 !important; }
     .add-row { display: flex; gap: 8px; flex-wrap: wrap; }
     .add-row input {
       background: var(--surface); color: var(--text); border: 1px solid var(--border);
@@ -143,7 +146,10 @@
 
   <!-- Add Reel Panel -->
   <div class="add-panel">
-    <h3>Track a New Reel</h3>
+    <div class="add-panel-header">
+      <h3>Track a New Reel</h3>
+      <button class="secondary btn-danger" onclick="removeAllReels()">✕ Clear All</button>
+    </div>
     <div class="add-row">
       <input id="urlInput"   type="text" placeholder="https://www.instagram.com/reel/ABC123/" />
       <input id="labelInput" type="text" placeholder="Label (e.g. Viral Reel — Creator A)" style="max-width:280px;" />
@@ -166,6 +172,7 @@
         <option value="__all__">📊 All Reels — Comparison</option>
       </select>
       <span id="snapshotBadge" class="badge" style="background:rgba(99,102,241,.15);color:var(--accent);border:1px solid rgba(99,102,241,.3);">0 snapshots</span>
+      <button id="deleteReelBtn" class="secondary btn-danger" style="display:none;" onclick="deleteSelectedReel()">✕ Remove This Reel</button>
     </div>
 
     <div id="signals" style="margin-bottom:16px;"></div>
@@ -492,7 +499,7 @@ async function refreshPills() {
     <div class="reel-pill">
       <span class="dot" style="background:${COLORS[i % COLORS.length]}"></span>
       <span>${r.label ?? r.url}</span>
-      <button title="Remove" onclick="removeReel(${JSON.stringify(r.url)})">×</button>
+      <button title="Remove" data-url="${r.url}" onclick="removeReel(this.dataset.url)">×</button>
     </div>`).join('');
 }
 
@@ -534,8 +541,28 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // ── Remove reel ───────────────────────────────────────────────────────────────
 async function removeReel(url) {
-  if (!confirm(`Remove "${url}" from tracking list?`)) return;
-  await fetch('/api/reels', { method:'DELETE', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ url }) });
+  if (!confirm(`Remove this reel from the tracking list?\n\n${url}`)) return;
+  const res = await fetch('/api/reels', { method:'DELETE', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ url }) });
+  if (!res.ok) { const j = await res.json().catch(()=>({})); alert('Delete failed: ' + (j.error ?? res.status)); return; }
+  refreshPills();
+  loadAndRender();
+}
+
+async function deleteSelectedReel() {
+  const val = document.getElementById('reelSelect').value;
+  if (val === '__all__') return;
+  await removeReel(val);
+}
+
+async function removeAllReels() {
+  const res   = await fetch('/api/reels').catch(() => null);
+  if (!res?.ok) return;
+  const reels = await res.json();
+  if (!reels.length) { alert('No reels are currently tracked.'); return; }
+  if (!confirm(`Remove all ${reels.length} tracked reel(s) and their snapshot history?`)) return;
+  for (const r of reels) {
+    await fetch('/api/reels', { method:'DELETE', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ url: r.url }) });
+  }
   refreshPills();
   loadAndRender();
 }
@@ -556,6 +583,7 @@ function populateSelector(data) {
 
 function onReelChange() {
   const val = document.getElementById('reelSelect').value;
+  document.getElementById('deleteReelBtn').style.display = val === '__all__' ? 'none' : 'inline-block';
   destroyAll();
   val === '__all__' ? renderComparison() : renderSingle(allData[val]);
 }
