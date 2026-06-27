@@ -116,6 +116,8 @@ app.delete("/api/reels", async (req, res) => {
 });
 
 // ── Scrape endpoint (called by external cron, e.g. cron-job.org) ──────────────
+// Responds immediately with 202 so cron-job.org doesn't timeout or hit its
+// response-size limit while Apify runs (~5 min). Scrape continues in background.
 
 app.post("/api/scrape", async (req, res) => {
   const secret = process.env.SCRAPE_SECRET;
@@ -127,13 +129,16 @@ app.post("/api/scrape", async (req, res) => {
     const { rows: reels } = await pool.query(
       "SELECT url, label, short_code FROM reels ORDER BY created_at"
     );
-    if (!reels.length) return res.json({ ok: true, scraped: 0, message: "No reels tracked yet" });
 
-    const scraped = await scrapeAndSave(reels);
-    res.json({ ok: true, scraped, total: reels.length });
+    // Acknowledge immediately — Apify takes up to 5 min and cron-job.org will abort otherwise.
+    res.status(202).json({ ok: true, queued: reels.length });
+
+    if (!reels.length) return;
+
+    scrapeAndSave(reels).catch(e => console.error("Background scrape error:", e.message));
   } catch (e) {
     console.error("Scrape endpoint error:", e.message);
-    res.status(500).json({ error: e.message });
+    if (!res.headersSent) res.status(500).json({ error: e.message });
   }
 });
 
