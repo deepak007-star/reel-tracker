@@ -115,6 +115,28 @@ app.delete("/api/reels", async (req, res) => {
   }
 });
 
+// ── Scrape endpoint (called by external cron, e.g. cron-job.org) ──────────────
+
+app.post("/api/scrape", async (req, res) => {
+  const secret = process.env.SCRAPE_SECRET;
+  if (secret && req.headers["x-scrape-token"] !== secret) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  try {
+    const { rows: reels } = await pool.query(
+      "SELECT url, label, short_code FROM reels ORDER BY created_at"
+    );
+    if (!reels.length) return res.json({ ok: true, scraped: 0, message: "No reels tracked yet" });
+
+    const scraped = await scrapeAndSave(reels);
+    res.json({ ok: true, scraped, total: reels.length });
+  } catch (e) {
+    console.error("Scrape endpoint error:", e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ── Start ──────────────────────────────────────────────────────────────────────
 
 async function main() {
